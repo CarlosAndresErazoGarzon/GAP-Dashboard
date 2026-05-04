@@ -79,7 +79,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 @st.cache_resource
-def get_data_manager():
+def load_system_data_manager():
     dm = DataManager()
     migrated = False
     for tipo in ["comentarios", "reprocesos", "aciertos_fallos"]:
@@ -91,7 +91,7 @@ def get_data_manager():
         dm.save_json_data()
     return dm
 
-dm = get_data_manager()
+dm = load_system_data_manager()
 
 # Navegación
 st.sidebar.markdown("<h2 style='text-align: center;'>PORTAFOLIO</h2><hr>", unsafe_allow_html=True)
