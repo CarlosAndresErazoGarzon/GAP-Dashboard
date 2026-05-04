@@ -117,3 +117,39 @@ class DataManager:
         if tipo in self.registros and 0 <= index < len(self.registros[tipo]):
             self.registros[tipo].pop(index)
             self.save_json_data()
+
+    def get_gantt_data(self):
+        if self.df_indicadores_totales.empty:
+            return []
+        
+        results = []
+        activities = [a for a in self.df_indicadores_totales['Actividad'].unique() if a != 'TOTAL']
+        
+        for act in activities:
+            sub = self.df_indicadores_totales[self.df_indicadores_totales['Actividad'] == act].copy()
+            # Asegurar que Fecha sea string para comparaciones si es necesario, o manejarla como objeto
+            sub['Fecha_str'] = sub['Fecha'].astype(str)
+            sub = sub.sort_values('Fecha_str')
+            
+            # Start: First month with AR > 0
+            start_row = sub[sub['AR'] > 0]
+            if not start_row.empty:
+                start = start_row['Fecha_str'].iloc[0]
+            else:
+                start = sub['Fecha_str'].iloc[0]
+                
+            # End: First month with AR >= 100
+            end_row = sub[sub['AR'] >= 100]
+            if not end_row.empty:
+                end = end_row['Fecha_str'].iloc[0]
+            else:
+                end = sub['Fecha_str'].iloc[-1]
+            
+            results.append({
+                'Task': act,
+                'Start': start,
+                'Finish': end,
+                'Completion': sub['AR'].iloc[-1]
+            })
+            
+        return results

@@ -95,7 +95,7 @@ dm = get_data_manager()
 
 # Navegación
 st.sidebar.markdown("<h2 style='text-align: center;'>PORTAFOLIO</h2><hr>", unsafe_allow_html=True)
-opciones = ["RESUMEN EJECUTIVO", "FLUJO DE CAJA", "CONTROL DE PAQUETES", "INDICADORES MENSUALES", "BITÁCORA"]
+opciones = ["RESUMEN EJECUTIVO", "CRONOGRAMA (GANTT)", "FLUJO DE CAJA", "CONTROL DE PAQUETES", "INDICADORES MENSUALES", "BITÁCORA"]
 seleccion = st.sidebar.radio("Navegación", opciones, label_visibility="collapsed")
 
 if seleccion == "RESUMEN EJECUTIVO":
@@ -157,6 +157,61 @@ if seleccion == "RESUMEN EJECUTIVO":
                 """, unsafe_allow_html=True)
         else:
             st.info("No hay registros con puntuación ≥ 5 en la Bitácora.")
+
+elif seleccion == "CRONOGRAMA (GANTT)":
+    st.markdown("<h1>Cronograma de Actividades (Gantt)</h1>", unsafe_allow_html=True)
+    gantt_data = dm.get_gantt_data()
+    
+    if gantt_data:
+        df_gantt = pd.DataFrame(gantt_data)
+        
+        # Convertir fechas MM-DD a datetime para que Plotly las ordene bien
+        # Asumimos año 2024 para visualización
+        def fix_date(d):
+            if len(d) == 5: # MM-DD
+                return f"2024-{d}"
+            return d
+            
+        df_gantt['Start'] = df_gantt['Start'].apply(fix_date)
+        df_gantt['Finish'] = df_gantt['Finish'].apply(fix_date)
+        
+        # Asegurar que Finish sea estrictamente después de Start para visualización si son iguales
+        # (ej. si una tarea empieza y termina el mismo mes)
+        # df_gantt['Finish'] = pd.to_datetime(df_gantt['Finish']) + pd.DateOffset(days=28)
+        
+        import plotly.express as px
+        fig_gantt = px.timeline(
+            df_gantt, 
+            x_start="Start", 
+            x_end="Finish", 
+            y="Task",
+            color="Completion",
+            color_continuous_scale='RdYlGn',
+            labels={"Task": "Actividad", "Completion": "Avance %"},
+            hover_data=["Completion"]
+        )
+        
+        fig_gantt.update_yaxes(autorange="reversed") # Tareas de arriba hacia abajo
+        fig_gantt.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0,0,0)',
+            xaxis_title="Línea de Tiempo",
+            height=500,
+            xaxis=dict(
+                showgrid=True,
+                gridcolor='#e0e0e0',
+                tickformat="%b", # Mostrar nombre del mes
+                dtick="M1" # Intervalo de un mes
+            )
+        )
+        
+        st.plotly_chart(fig_gantt, use_container_width=True)
+        
+        # Tabla resumen
+        with st.expander("Ver detalle de fechas"):
+            st.table(df_gantt)
+    else:
+        st.warning("No hay datos disponibles para generar el cronograma.")
 
 elif seleccion == "FLUJO DE CAJA":
     st.markdown("<h1>Análisis de Flujo de Caja Mensual</h1>", unsafe_allow_html=True)
