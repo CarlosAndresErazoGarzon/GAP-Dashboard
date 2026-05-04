@@ -165,19 +165,13 @@ elif seleccion == "CRONOGRAMA (GANTT)":
     if gantt_data:
         df_gantt = pd.DataFrame(gantt_data)
         
-        # Convertir fechas MM-DD a datetime para que Plotly las ordene bien
-        # Asumimos año 2024 para visualización
         def fix_date(d):
             if len(d) == 5: # MM-DD
-                return f"2024-{d}"
+                return f"2026-{d}"
             return d
             
         df_gantt['Start'] = df_gantt['Start'].apply(fix_date)
         df_gantt['Finish'] = df_gantt['Finish'].apply(fix_date)
-        
-        # Asegurar que Finish sea estrictamente después de Start para visualización si son iguales
-        # (ej. si una tarea empieza y termina el mismo mes)
-        # df_gantt['Finish'] = pd.to_datetime(df_gantt['Finish']) + pd.DateOffset(days=28)
         
         import plotly.express as px
         fig_gantt = px.timeline(
