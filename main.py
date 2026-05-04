@@ -167,7 +167,7 @@ elif seleccion == "CRONOGRAMA (GANTT)":
         
         def fix_date(d):
             if len(d) == 5: # MM-DD
-                return f"2026-{d}"
+                return f"2001-{d}"
             return d
             
         df_gantt['Start'] = df_gantt['Start'].apply(fix_date)
