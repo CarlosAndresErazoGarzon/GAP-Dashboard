@@ -78,7 +78,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-@st.cache_resource
 def load_system_data_manager():
     dm = DataManager()
     migrated = False

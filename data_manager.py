@@ -16,6 +16,7 @@ EXCEL_FILE = os.path.join(base_dir, "Entrega3.xlsx")
 JSON_FILE = os.path.join(base_dir, "registros.json")
 
 class DataManager:
+    VERSION = "1.1"
     def __init__(self):
         self.load_excel_data()
         self.load_json_data()
