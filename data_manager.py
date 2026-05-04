@@ -75,13 +75,36 @@ class DataManager:
             "SV": latest.get("SV (VG-VP)", 0), 
         }
 
+    def normalize_date(self, d):
+        if pd.isna(d):
+            return None
+        d_str = str(d).strip()
+        try:
+            # Try YY-MM format (e.g., 01-10)
+            if len(d_str) == 5 and d_str[2] == '-':
+                return pd.to_datetime(d_str, format="%y-%m").strftime("%Y-%m-%d")
+            # Try standard formats
+            return pd.to_datetime(d_str).strftime("%Y-%m-%d")
+        except:
+            return d_str
+
     def get_kpi_by_month(self, month_or_date):
         if self.df_kpi.empty:
             return {}
-        # Filtrar por fecha
-        df_filtered = self.df_kpi[self.df_kpi["Fecha"] == month_or_date]
+        
+        target = self.normalize_date(month_or_date)
+        
+        # Filtrar por fecha normalizada
+        mask = self.df_kpi["Fecha"].apply(self.normalize_date) == target
+        df_filtered = self.df_kpi[mask]
+        
+        if df_filtered.empty:
+            # Si no hay coincidencia exacta, intentamos buscar si el KPI tiene la fecha en el formato original
+            df_filtered = self.df_kpi[self.df_kpi["Fecha"].astype(str) == str(month_or_date)]
+            
         if df_filtered.empty:
             return self.get_kpi_metrics() 
+            
         row = df_filtered.iloc[-1]
         return {
             "VP": row.get("VP", 0),

@@ -131,7 +131,56 @@ if seleccion == "RESUMEN EJECUTIVO":
                 yaxis=dict(showgrid=True, gridcolor='#e0e0e0', tickformat="$,.0f", color="#333"),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
-            st.plotly_chart(fig, width='stretch')
+            selection = st.plotly_chart(fig, width='stretch', on_select="rerun", key="scurve_chart")
+            
+            if selection and selection.get("selection", {}).get("points"):
+                selected_point = selection["selection"]["points"][0]
+                fecha_sel = selected_point.get("x")
+                
+                st.markdown(f"""
+                <div style='background: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 5px solid #2980b9; margin-top: 10px;'>
+                    <h4 style='margin-top:0;'>Desglose Mensual: {fecha_sel}</h4>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Obtener KPIs del mes seleccionado
+                mes_kpis = dm.get_kpi_by_month(fecha_sel)
+                
+                # Mostrar KPIs en columnas pequeñas
+                mk1, mk2, mk3, mk4 = st.columns(4)
+                with mk1: st.metric("VP (Planificado)", f"${mes_kpis.get('VP', 0):,.0f}")
+                with mk2: st.metric("CR (Costo Real)", f"${mes_kpis.get('CR', 0):,.0f}")
+                with mk3: st.metric("VG (Valor Ganado)", f"${mes_kpis.get('VG', 0):,.0f}")
+                with mk4: st.metric("SPI (Eficiencia)", round(mes_kpis.get("SPI", 0), 3))
+                
+                # Mostrar actividades relevantes para ese mes
+                st.markdown("##### Actividades del periodo")
+                try:
+                    df_totales = dm.df_indicadores_totales
+                    # Normalizar fechas para comparación
+                    target = dm.normalize_date(fecha_sel)
+                    mask = df_totales["Fecha"].apply(dm.normalize_date) == target
+                    df_mes_act = df_totales[mask]
+                    
+                    if not df_mes_act.empty:
+                        # Limpiar y mostrar tabla
+                        display_cols = ["Actividad", "AR", "VPi", "CR"]
+                        available_cols = [c for c in display_cols if c in df_mes_act.columns]
+                        st.dataframe(df_mes_act[available_cols].rename(columns={
+                            "AR": "Avance Real (%)",
+                            "VPi": "Valor Planificado ($)",
+                            "CR": "Costo Real ($)"
+                        }), width='stretch', hide_index=True)
+                    else:
+                        st.info("No se encontraron detalles de actividades para este periodo.")
+                except Exception as e:
+                    st.error(f"Error al cargar detalle de actividades: {e}")
+            else:
+                st.markdown("""
+                <div style='background: #e1f5fe; padding: 10px; border-radius: 5px; color: #01579b; font-size: 0.9rem; border: 1px dashed #01579b;'>
+                    <b>Tip:</b> Haz clic en cualquier punto de la <b>Curva S</b> para ver el detalle de actividades y costos de ese mes específico.
+                </div>
+                """, unsafe_allow_html=True)
         except Exception as e:
             st.error(f"Error generando Curva S: {e}")
             
@@ -152,7 +201,7 @@ if seleccion == "RESUMEN EJECUTIVO":
                 st.markdown(f"""
                 <div class='top-comment'>
                     <div style='font-size: 0.75rem; color: #7f8c8d; text-transform: uppercase; font-weight: bold;'>{tipo_str}</div>
-                    <strong>{item['score']} ⭐</strong> - {item['text']}
+                    <strong>{item['score']}</strong> - {item['text']}
                 </div>
                 """, unsafe_allow_html=True)
         else:
@@ -199,7 +248,7 @@ elif seleccion == "CRONOGRAMA (GANTT)":
             )
         )
         
-        st.plotly_chart(fig_gantt, use_container_width=True)
+        st.plotly_chart(fig_gantt, width='stretch')
         
         # Tabla resumen
         with st.expander("Ver detalle de fechas"):
@@ -306,6 +355,12 @@ elif seleccion == "INDICADORES MENSUALES":
 elif seleccion == "BITÁCORA":
     st.markdown("<h1>Gestión de Conocimiento y Bitácora</h1>", unsafe_allow_html=True)
     
+    st.markdown("""
+    <div style='background: #fff3e0; padding: 10px; border-radius: 5px; color: #e65100; font-size: 0.9rem; border: 1px dashed #e65100; margin-bottom: 20px;'>
+        <b>Nota:</b> Los registros que alcancen una puntuación de <b>5 o más</b> serán destacados automáticamente en el <b>Resumen Ejecutivo</b> como puntos críticos.
+    </div>
+    """, unsafe_allow_html=True)
+    
     t1, t2, t3 = st.tabs(["COMENTARIOS", "REPROCESOS", "LECCIONES APRENDIDAS"])
     
     def render_exec_list(tipo):
@@ -317,14 +372,14 @@ elif seleccion == "BITÁCORA":
         for idx, item in items_sorted:
             c1, c2, c3 = st.columns([0.1, 0.8, 0.1])
             with c1:
-                if st.button(f"⭐ {item['score']}", key=f"up_{tipo}_{idx}", help="Puntuar"):
+                if st.button(f"Score: {item['score']}", key=f"up_{tipo}_{idx}", help="Puntuar"):
                     dm.registros[tipo][idx]['score'] += 1
                     dm.save_json_data()
                     st.rerun()
             with c2:
                 st.markdown(f"<div style='background: #ffffff; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;'>{item['text']}</div>", unsafe_allow_html=True)
             with c3:
-                if st.button("🗑️", key=f"del_{tipo}_{idx}"):
+                if st.button("Eliminar", key=f"del_{tipo}_{idx}"):
                     dm.delete_registro(tipo, idx)
                     st.rerun()
                 
