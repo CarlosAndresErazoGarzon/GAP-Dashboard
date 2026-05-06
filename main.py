@@ -75,6 +75,16 @@ st.markdown("""
         margin-bottom: 10px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
+    /* Estilo para alinear el slider */
+    .slider-container {
+        margin-left: 5px;
+        margin-right: 5px;
+    }
+    
+    [data-testid="stSlider"] {
+        padding-top: 0rem;
+        padding-bottom: 2rem;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -118,68 +128,141 @@ if seleccion == "RESUMEN EJECUTIVO":
         st.markdown("### Análisis de Valor Ganado (Curva S)")
         try:
             fechas, vp, cr, vg = dm.get_scurve_data()
+            
+            if "idx_sel" not in st.session_state:
+                st.session_state.idx_sel = len(fechas) - 1
+            
+            fecha_sel = fechas[st.session_state.idx_sel]
+            
+            # Filtrar curvas
+            fechas_filt = fechas[:st.session_state.idx_sel+1]
+            cr_filt = cr[:st.session_state.idx_sel+1]
+            vg_filt = vg[:st.session_state.idx_sel+1]
+            
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=fechas, y=vp, name='VP (Planificado)', line=dict(color='#2980b9', width=3)))
-            fig.add_trace(go.Scatter(x=fechas, y=cr, name='CR (Real)', line=dict(color='#e74c3c', width=3)))
-            fig.add_trace(go.Scatter(x=fechas, y=vg, name='VG (Ganado)', line=dict(color='#27ae60', width=3, dash='dash')))
+            
+            # Sombreado del futuro
+            fig.add_vrect(
+                x0=fecha_sel, x1=fechas[-1],
+                fillcolor="rgba(200, 200, 200, 0.1)",
+                layer="below", line_width=0,
+            )
+            
+            # Línea vertical
+            fig.add_vline(x=fecha_sel, line_width=3, line_color="#2c3e50", opacity=0.8)
+            
+            fig.add_trace(go.Scatter(
+                x=[fecha_sel], y=[max(vp)*1.05],
+                mode='markers',
+                marker=dict(symbol='circle', size=18, color='#2c3e50', line=dict(color='white', width=2)),
+                showlegend=False, hoverinfo='skip'
+            ))
+            
+            # Curva VP 
+            fig.add_trace(go.Scatter(
+                x=fechas, y=vp, name='VP (Planificado)', 
+                line=dict(color='#2980b9', width=2.5), 
+                opacity=1.0
+            ))
+            
+            # Curvas de Avance
+            fig.add_trace(go.Scatter(
+                x=fechas_filt, y=cr_filt, name='CR (Real)', 
+                line=dict(color='#e74c3c', width=4),
+                mode='lines+markers'
+            ))
+            fig.add_trace(go.Scatter(
+                x=fechas_filt, y=vg_filt, name='VG (Ganado)', 
+                line=dict(color='#27ae60', width=4),
+                mode='lines+markers'
+            ))
             
             fig.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=0, r=0, t=10, b=0), height=400, hovermode="x unified",
-                xaxis=dict(showgrid=True, gridcolor='#e0e0e0', color="#333"),
-                yaxis=dict(showgrid=True, gridcolor='#e0e0e0', tickformat="$,.0f", color="#333"),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                margin=dict(l=80, r=80, t=20, b=10), height=400, hovermode="x unified",
+                xaxis=dict(showgrid=True, gridcolor='#e0e0e0', color="#333", fixedrange=True),
+                yaxis=dict(showgrid=True, gridcolor='#e0e0e0', tickformat="$,.0f", color="#333", fixedrange=True),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                clickmode='event+select',
+                dragmode=False
             )
-            selection = st.plotly_chart(fig, width='stretch', on_select="rerun", key="scurve_chart")
             
+            selection = st.plotly_chart(
+                fig, 
+                width='stretch', 
+                on_select="rerun", 
+                key="scurve_chart",
+                config={'displayModeBar': False}
+            )
+            
+            # --- Slider ---
+            sc1, sc2, sc3 = st.columns([0.1, 0.8, 0.1])
+            with sc2:
+                idx_sel = st.select_slider(
+                    "Línea de Tiempo",
+                    options=range(len(fechas)),
+                    format_func=lambda x: fechas[x],
+                    value=st.session_state.idx_sel,
+                    key="project_slider",
+                    label_visibility="collapsed"
+                )
+                if idx_sel != st.session_state.idx_sel:
+                    st.session_state.idx_sel = idx_sel
+                    st.rerun()
+            
+            # Si el usuario hace clic en un punto de la gráfica, actualizamos el slider
             if selection and selection.get("selection", {}).get("points"):
-                selected_point = selection["selection"]["points"][0]
-                fecha_sel = selected_point.get("x")
+                point = selection["selection"]["points"][0]
+                fecha_click = point.get("x")
+                if fecha_click in fechas:
+                    new_idx = fechas.index(fecha_click)
+                    if new_idx != st.session_state.idx_sel:
+                        st.session_state.idx_sel = new_idx
+                        st.rerun()
+            
+            # --- Detalle al pie de la gráfica ---
+            st.markdown(f"""
+            <div style='background: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 5px solid #2980b9; margin-top: 10px;'>
+                <h4 style='margin-top:0;'>Situación del Proyecto al: {fecha_sel}</h4>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Obtener KPIs del mes seleccionado
+            mes_kpis = dm.get_kpi_by_month(fecha_sel)
+            
+            # Mostrar KPIs en columnas pequeñas
+            mk1, mk2, mk3, mk4 = st.columns(4)
+            with mk1: st.metric("VP Acumulado", f"${mes_kpis.get('VP', 0):,.0f}")
+            with mk2: st.metric("CR Acumulado", f"${mes_kpis.get('CR', 0):,.0f}")
+            with mk3: st.metric("VG Acumulado", f"${mes_kpis.get('VG', 0):,.0f}")
+            with mk4: st.metric("SPI", round(mes_kpis.get("SPI", 0), 3))
+            
+            # Mostrar actividades relevantes para ese mes
+            st.markdown("##### Actividades del periodo")
+            try:
+                df_totales = dm.df_indicadores_totales
+                target = dm.normalize_date(fecha_sel)
+                mask = df_totales["Fecha"].apply(dm.normalize_date) == target
+                df_mes_act = df_totales[mask]
                 
-                st.markdown(f"""
-                <div style='background: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 5px solid #2980b9; margin-top: 10px;'>
-                    <h4 style='margin-top:0;'>Desglose Mensual: {fecha_sel}</h4>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Obtener KPIs del mes seleccionado
-                mes_kpis = dm.get_kpi_by_month(fecha_sel)
-                
-                # Mostrar KPIs en columnas pequeñas
-                mk1, mk2, mk3, mk4 = st.columns(4)
-                with mk1: st.metric("VP (Planificado)", f"${mes_kpis.get('VP', 0):,.0f}")
-                with mk2: st.metric("CR (Costo Real)", f"${mes_kpis.get('CR', 0):,.0f}")
-                with mk3: st.metric("VG (Valor Ganado)", f"${mes_kpis.get('VG', 0):,.0f}")
-                with mk4: st.metric("SPI (Eficiencia)", round(mes_kpis.get("SPI", 0), 3))
-                
-                # Mostrar actividades relevantes para ese mes
-                st.markdown("##### Actividades del periodo")
-                try:
-                    df_totales = dm.df_indicadores_totales
-                    # Normalizar fechas para comparación
-                    target = dm.normalize_date(fecha_sel)
-                    mask = df_totales["Fecha"].apply(dm.normalize_date) == target
-                    df_mes_act = df_totales[mask]
-                    
-                    if not df_mes_act.empty:
-                        # Limpiar y mostrar tabla
-                        display_cols = ["Actividad", "AR", "VPi", "CR"]
-                        available_cols = [c for c in display_cols if c in df_mes_act.columns]
-                        st.dataframe(df_mes_act[available_cols].rename(columns={
-                            "AR": "Avance Real (%)",
-                            "VPi": "Valor Planificado ($)",
-                            "CR": "Costo Real ($)"
-                        }), width='stretch', hide_index=True)
-                    else:
-                        st.info("No se encontraron detalles de actividades para este periodo.")
-                except Exception as e:
-                    st.error(f"Error al cargar detalle de actividades: {e}")
-            else:
-                st.markdown("""
-                <div style='background: #e1f5fe; padding: 10px; border-radius: 5px; color: #01579b; font-size: 0.9rem; border: 1px dashed #01579b;'>
-                    <b>Tip:</b> Haz clic en cualquier punto de la <b>Curva S</b> para ver el detalle de actividades y costos de ese mes específico.
-                </div>
-                """, unsafe_allow_html=True)
+                if not df_mes_act.empty:
+                    display_cols = ["Actividad", "AR", "VPi", "CR"]
+                    available_cols = [c for c in display_cols if c in df_mes_act.columns]
+                    st.dataframe(df_mes_act[available_cols].rename(columns={
+                        "AR": "Avance Real (%)",
+                        "VPi": "Valor Planificado ($)",
+                        "CR": "Costo Real ($)"
+                    }), width='stretch', hide_index=True)
+                else:
+                    st.info("No se encontraron detalles para este periodo.")
+            except Exception as e:
+                st.error(f"Error al cargar detalle: {e}")
+            
+            st.markdown("""
+            <div style='background: #e1f5fe; padding: 10px; border-radius: 5px; color: #01579b; font-size: 0.85rem; border: 1px dashed #01579b;'>
+                💡 <b>Interacción:</b> Debido a las limitaciones de Streamlit, para <b>arrastrar</b> la línea debes usar el control superior. También puedes hacer <b>clic</b> en cualquier punto de la gráfica para saltar a ese mes.
+            </div>
+            """, unsafe_allow_html=True)
         except Exception as e:
             st.error(f"Error generando Curva S: {e}")
             
