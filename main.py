@@ -345,11 +345,11 @@ elif seleccion == "FLUJO DE CAJA":
         if not df_calc.empty:
             # Calcular flujo de caja periódico (diferencias)
             df_calc['Flujo_CR'] = pd.to_numeric(df_calc['CR'], errors='coerce').fillna(0).diff().fillna(pd.to_numeric(df_calc['CR'], errors='coerce').fillna(0).iloc[0])
-            df_calc['Flujo_VP'] = pd.to_numeric(df_calc['VPi'], errors='coerce').fillna(0).diff().fillna(pd.to_numeric(df_calc['VPi'], errors='coerce').fillna(0).iloc[0])
+            df_calc['Flujo_VP'] = pd.to_numeric(df_calc['Cco'], errors='coerce').fillna(0).diff().fillna(pd.to_numeric(df_calc['Cco'], errors='coerce').fillna(0).iloc[0])
             
             # Acumulados
             df_calc['CR_Acum'] = pd.to_numeric(df_calc['CR'], errors='coerce').fillna(0)
-            df_calc['VP_Acum'] = pd.to_numeric(df_calc['VPi'], errors='coerce').fillna(0)
+            df_calc['VP_Acum'] = pd.to_numeric(df_calc['Cco'], errors='coerce').fillna(0)
             
             fechas = df_calc['Fecha'].tolist()
             

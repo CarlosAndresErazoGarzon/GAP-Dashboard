@@ -62,18 +62,29 @@ class DataManager:
             json.dump(self.registros, f, indent=4, ensure_ascii=False)
 
     def get_kpi_metrics(self):
-        # Returns the latest KPIs from the KPI sheet
-        if self.df_kpi.empty:
+        # Returns the latest KPIs dynamically calculated using Cco as VP
+        if self.df_kpi.empty or self.df_calculos.empty:
             return {}
-        latest = self.df_kpi.iloc[-1]
+        latest_kpi = self.df_kpi.iloc[-1]
+        latest_calc = self.df_calculos.iloc[-1]
+        
+        vp_val = float(latest_calc.get("Cco", 0))
+        cr_val = float(latest_kpi.get("CR", 0))
+        vg_val = float(latest_kpi.get("VG", 0))
+        
+        sv_val = vg_val - vp_val
+        spi_val = (vg_val / vp_val) if vp_val > 0 else 1.0
+        cv_val = vg_val - cr_val
+        cpi_val = (vg_val / cr_val) if cr_val > 0 else 1.0
+        
         return {
-            "VP": latest.get("VP", 0),
-            "CR": latest.get("CR", 0),
-            "VG": latest.get("VG", 0),
-            "SPI": latest.get("SPI", 0),
-            "CPI": latest.get("CPI", 0),
-            "CV": latest.get("CV (VG-CR)", 0),
-            "SV": latest.get("SV (VG-VP)", 0), 
+            "VP": vp_val,
+            "CR": cr_val,
+            "VG": vg_val,
+            "SPI": spi_val,
+            "CPI": cpi_val,
+            "CV": cv_val,
+            "SV": sv_val,
         }
 
     def normalize_date(self, d):
@@ -90,40 +101,81 @@ class DataManager:
             return d_str
 
     def get_kpi_by_month(self, month_or_date):
-        if self.df_kpi.empty:
+        if month_or_date == "Inicio":
+            return {
+                "VP": 0.0,
+                "CR": 0.0,
+                "VG": 0.0,
+                "SPI": 1.0,
+                "CPI": 1.0,
+                "CV": 0.0,
+                "SV": 0.0
+            }
+            
+        if self.df_kpi.empty or self.df_calculos.empty:
             return {}
         
         target = self.normalize_date(month_or_date)
         
         # Filtrar por fecha normalizada
-        mask = self.df_kpi["Fecha"].apply(self.normalize_date) == target
-        df_filtered = self.df_kpi[mask]
+        mask_kpi = self.df_kpi["Fecha"].apply(self.normalize_date) == target
+        df_kpi_filt = self.df_kpi[mask_kpi]
         
-        if df_filtered.empty:
+        mask_calc = self.df_calculos["Fecha"].apply(self.normalize_date) == target
+        df_calc_filt = self.df_calculos[mask_calc]
+        
+        if df_kpi_filt.empty:
             # Si no hay coincidencia exacta, intentamos buscar si el KPI tiene la fecha en el formato original
-            df_filtered = self.df_kpi[self.df_kpi["Fecha"].astype(str) == str(month_or_date)]
+            df_kpi_filt = self.df_kpi[self.df_kpi["Fecha"].astype(str) == str(month_or_date)]
+            df_calc_filt = self.df_calculos[self.df_calculos["Fecha"].astype(str) == str(month_or_date)]
             
-        if df_filtered.empty:
+        if df_kpi_filt.empty:
             return self.get_kpi_metrics() 
             
-        row = df_filtered.iloc[-1]
+        row_kpi = df_kpi_filt.iloc[-1]
+        
+        # Obtener Cco como el VP acumulado real
+        vp_val = 0.0
+        if not df_calc_filt.empty:
+            vp_val = float(df_calc_filt.iloc[-1].get("Cco", 0))
+        else:
+            vp_val = float(row_kpi.get("VP", 0))
+            
+        cr_val = float(row_kpi.get("CR", 0))
+        vg_val = float(row_kpi.get("VG", 0))
+        
+        # Calcular de forma dinámica
+        sv_val = vg_val - vp_val
+        spi_val = (vg_val / vp_val) if vp_val > 0 else 1.0
+        cv_val = vg_val - cr_val
+        cpi_val = (vg_val / cr_val) if cr_val > 0 else 1.0
+        
         return {
-            "VP": row.get("VP", 0),
-            "CR": row.get("CR", 0),
-            "VG": row.get("VG", 0),
-            "SPI": row.get("SPI", 0),
-            "CPI": row.get("CPI", 0),
-            "CV": row.get("CV (VG-CR)", 0)
+            "VP": vp_val,
+            "CR": cr_val,
+            "VG": vg_val,
+            "SPI": spi_val,
+            "CPI": cpi_val,
+            "CV": cv_val,
+            "SV": sv_val
         }
 
     def get_scurve_data(self):
-        if self.df_kpi.empty:
+        if self.df_kpi.empty or self.df_calculos.empty:
             return [], [], [], []
+        
         fechas = self.df_kpi["Fecha"].tolist()
-        vp = self.df_kpi["VP"].tolist()
-        cr = self.df_kpi["CR"].tolist()
-        vg = self.df_kpi["VG"].tolist()
-        return fechas, vp, cr, vg
+        vp = pd.to_numeric(self.df_calculos["Cco"], errors="coerce").fillna(0).tolist()
+        cr = pd.to_numeric(self.df_kpi["CR"], errors="coerce").fillna(0).tolist()
+        vg = pd.to_numeric(self.df_kpi["VG"], errors="coerce").fillna(0).tolist()
+        
+        # Prepend 'Inicio' to start at 0.0
+        fechas_res = ["Inicio"] + fechas
+        vp_res = [0.0] + vp
+        cr_res = [0.0] + cr
+        vg_res = [0.0] + vg
+        
+        return fechas_res, vp_res, cr_res, vg_res
 
     def get_wbs_data(self):
         if self.df_paquetes.empty:
