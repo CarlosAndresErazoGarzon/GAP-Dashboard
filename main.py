@@ -11,6 +11,11 @@ if not st.runtime.exists():
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+
+# Force reload data_manager module to avoid caching issues on hot-reload (especially on Streamlit Cloud)
+import importlib
+import data_manager
+importlib.reload(data_manager)
 from data_manager import DataManager
 
 st.set_page_config(
