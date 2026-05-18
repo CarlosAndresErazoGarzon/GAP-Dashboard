@@ -102,8 +102,22 @@ def load_system_data_manager():
 
 dm = load_system_data_manager()
 
+# Selector de Proyecto en el Portafolio
+st.sidebar.markdown("<h3 style='margin-bottom: 5px; font-weight: 600; font-size: 1.1rem; color: #2c3e50;'>PROYECTO SELECCIONADO</h3>", unsafe_allow_html=True)
+proyectos = [
+    "Caso Base (Original)",
+    "Proyecto Acelerado",
+    "Retraso en Procura",
+    "Sobrecosto por Cambios",
+    "Rendimiento Excepcional"
+]
+proyecto_sel = st.sidebar.selectbox("Seleccione Proyecto", proyectos, key="proyecto_sel_widget", label_visibility="collapsed")
+
+# Aplicar el proyecto seleccionado al DataManager
+dm.set_project(proyecto_sel)
+
 # Navegación
-st.sidebar.markdown("<h2 style='text-align: center;'>PORTAFOLIO</h2><hr>", unsafe_allow_html=True)
+st.sidebar.markdown("<br><h2 style='text-align: center; margin-top: 10px;'>NAVEGACIÓN</h2><hr>", unsafe_allow_html=True)
 opciones = ["RESUMEN EJECUTIVO", "CRONOGRAMA (GANTT)", "FLUJO DE CAJA", "CONTROL DE PAQUETES", "INDICADORES MENSUALES", "BITÁCORA"]
 seleccion = st.sidebar.radio("Navegación", opciones, label_visibility="collapsed")
 

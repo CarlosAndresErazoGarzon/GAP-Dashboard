@@ -16,10 +16,101 @@ EXCEL_FILE = os.path.join(base_dir, "Entrega3.xlsx")
 JSON_FILE = os.path.join(base_dir, "registros.json")
 
 class DataManager:
-    VERSION = "1.1"
+    VERSION = "1.2"
     def __init__(self):
+        self.project_name = "Caso Base (Original)"
         self.load_excel_data()
         self.load_json_data()
+
+    def get_project_id(self):
+        return self.project_name.lower().replace(" (original)", "").replace(" ", "_")
+
+    def set_project(self, project_name):
+        self.project_name = project_name
+        self.load_excel_data() # Re-load fresh base case data
+        
+        # Apply mathematical transformations to generate realistic project scenarios
+        if project_name == "Caso Base (Original)":
+            pass
+        elif project_name == "Proyecto Acelerado":
+            self._apply_scaling(factor_vg=1.15, factor_cr=1.10, factor_vp=1.0)
+        elif project_name == "Retraso en Procura":
+            self._apply_delay_scaling()
+        elif project_name == "Sobrecosto por Cambios":
+            self._apply_scaling(factor_vg=0.90, factor_cr=1.35, factor_vp=1.15)
+        elif project_name == "Rendimiento Excepcional":
+            self._apply_scaling(factor_vg=1.08, factor_cr=0.85, factor_vp=1.0)
+            
+        self.load_json_data() # Load project-specific JSON logs
+
+    def _apply_scaling(self, factor_vg, factor_cr, factor_vp):
+        # Scale df_kpi
+        for col, factor in [("VG", factor_vg), ("CR", factor_cr), ("VP", factor_vp)]:
+            if col in self.df_kpi.columns:
+                self.df_kpi[col] = pd.to_numeric(self.df_kpi[col], errors='coerce').fillna(0) * factor
+        if "AR (%)" in self.df_kpi.columns:
+            self.df_kpi["AR (%)"] = (pd.to_numeric(self.df_kpi["AR (%)"], errors='coerce').fillna(0) * factor_vg).clip(0, 100)
+            
+        # Scale df_calculos
+        for col, factor in [("VG", factor_vg), ("CR", factor_cr), ("Cco", factor_vp)]:
+            if col in self.df_calculos.columns:
+                self.df_calculos[col] = pd.to_numeric(self.df_calculos[col], errors='coerce').fillna(0) * factor
+        if "AR" in self.df_calculos.columns:
+            self.df_calculos["AR"] = (pd.to_numeric(self.df_calculos["AR"], errors='coerce').fillna(0) * factor_vg).clip(0, 100)
+
+        # Scale df_indicadores_totales
+        for col, factor in [("VG", factor_vg), ("CR", factor_cr), ("Cco", factor_vp)]:
+            if col in self.df_indicadores_totales.columns:
+                self.df_indicadores_totales[col] = pd.to_numeric(self.df_indicadores_totales[col], errors='coerce').fillna(0) * factor
+        if "AR" in self.df_indicadores_totales.columns:
+            self.df_indicadores_totales["AR"] = (pd.to_numeric(self.df_indicadores_totales["AR"], errors='coerce').fillna(0) * factor_vg).clip(0, 100)
+
+        # Scale df_paquetes
+        if not self.df_paquetes.empty:
+            if "AR" in self.df_paquetes.columns:
+                self.df_paquetes["AR"] = (pd.to_numeric(self.df_paquetes["AR"], errors='coerce').fillna(0) * factor_vg).clip(0, 100)
+            if "CR" in self.df_paquetes.columns:
+                self.df_paquetes["CR"] = pd.to_numeric(self.df_paquetes["CR"], errors='coerce').fillna(0) * factor_cr
+
+    def _apply_delay_scaling(self):
+        # Simulates a severe delay in procurement (months 4-8) with subsequent cost catch-up (months 9-12)
+        delay_dates = ["01-04", "01-05", "01-06", "01-07", "01-08"]
+        rush_dates = ["01-09", "01-10", "01-11", "01-12"]
+        
+        def get_vg_factor(date_val):
+            d_str = str(date_val).strip()
+            if any(x in d_str for x in delay_dates):
+                return 0.65
+            elif any(x in d_str for x in rush_dates):
+                return 0.90
+            return 1.0
+            
+        def get_cr_factor(date_val):
+            d_str = str(date_val).strip()
+            if any(x in d_str for x in rush_dates):
+                return 1.25
+            return 1.0
+            
+        for df in [self.df_kpi, self.df_calculos, self.df_indicadores_totales]:
+            if df.empty or "Fecha" not in df.columns:
+                continue
+            vg_factors = df["Fecha"].apply(get_vg_factor)
+            cr_factors = df["Fecha"].apply(get_cr_factor)
+            
+            for col in ["VG", "AR (%)", "AR"]:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0) * vg_factors
+                    if "AR" in col:
+                        df[col] = df[col].clip(0, 100)
+            if "CR" in df.columns:
+                df["CR"] = pd.to_numeric(df["CR"], errors='coerce').fillna(0) * cr_factors
+
+        # Scale df_paquetes
+        if not self.df_paquetes.empty:
+            if "AR" in self.df_paquetes.columns:
+                self.df_paquetes["AR"] = (pd.to_numeric(self.df_paquetes["AR"], errors='coerce').fillna(0) * 0.90).clip(0, 100)
+            if "CR" in self.df_paquetes.columns:
+                self.df_paquetes["CR"] = pd.to_numeric(self.df_paquetes["CR"], errors='coerce').fillna(0) * 1.25
 
     def load_excel_data(self):
         try:
@@ -38,7 +129,9 @@ class DataManager:
             self.df_calculos = pd.DataFrame()
 
     def load_json_data(self):
-        if not os.path.exists(JSON_FILE):
+        json_filename = f"registros_{self.get_project_id()}.json"
+        self.json_file_path = os.path.join(base_dir, json_filename)
+        if not os.path.exists(self.json_file_path):
             self.registros = {
                 "comentarios": [],
                 "reprocesos": [],
@@ -47,7 +140,7 @@ class DataManager:
             self.save_json_data()
         else:
             try:
-                with open(JSON_FILE, "r", encoding="utf-8") as f:
+                with open(self.json_file_path, "r", encoding="utf-8") as f:
                     self.registros = json.load(f)
             except Exception as e:
                 print(f"Error loading JSON: {e}")
@@ -58,8 +151,12 @@ class DataManager:
                 }
 
     def save_json_data(self):
-        with open(JSON_FILE, "w", encoding="utf-8") as f:
-            json.dump(self.registros, f, indent=4, ensure_ascii=False)
+        if hasattr(self, 'json_file_path') and self.json_file_path:
+            try:
+                with open(self.json_file_path, "w", encoding="utf-8") as f:
+                    json.dump(self.registros, f, indent=4, ensure_ascii=False)
+            except Exception as e:
+                print(f"Error saving JSON: {e}")
 
     def get_kpi_metrics(self):
         # Returns the latest KPIs dynamically calculated using Cco as VP
