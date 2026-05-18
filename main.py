@@ -111,15 +111,44 @@ dm = load_system_data_manager()
 st.sidebar.markdown("<h3 style='margin-bottom: 5px; font-weight: 600; font-size: 1.1rem; color: #2c3e50;'>PROYECTO SELECCIONADO</h3>", unsafe_allow_html=True)
 proyectos = [
     "Caso Base (Original)",
-    "Proyecto Acelerado",
-    "Retraso en Procura",
-    "Sobrecosto por Cambios",
-    "Rendimiento Excepcional"
+    "Proyecto 2 - Situación al 1 de Febrero",
+    "Proyecto 3 - Situación al 1 de Marzo",
+    "Proyecto 4 - Situación al 1 de Abril",
+    "Proyecto 5 - Situación al 1 de Mayo"
 ]
 proyecto_sel = st.sidebar.selectbox("Seleccione Proyecto", proyectos, key="proyecto_sel_widget", label_visibility="collapsed")
 
+# Forzar al slider a volver a la derecha al cambiar de proyecto
+if "last_proyecto" not in st.session_state:
+    st.session_state.last_proyecto = proyecto_sel
+
+if st.session_state.last_proyecto != proyecto_sel:
+    st.session_state.last_proyecto = proyecto_sel
+    if "idx_sel" in st.session_state:
+        del st.session_state["idx_sel"]
+
 # Aplicar el proyecto seleccionado al DataManager
 dm.set_project(proyecto_sel)
+
+# --- Filtro Dinámico de Corte de Tiempo ---
+cutoff_map = {
+    "Proyecto 2 - Situación al 1 de Febrero": "01-02",
+    "Proyecto 3 - Situación al 1 de Marzo": "01-03",
+    "Proyecto 4 - Situación al 1 de Abril": "01-04",
+    "Proyecto 5 - Situación al 1 de Mayo": "01-05",
+}
+cutoff = cutoff_map.get(proyecto_sel, "01-12")
+st.session_state["current_cutoff"] = cutoff
+
+# Recortar las tablas de flujo y curva S para eliminar meses estériles a la derecha
+if cutoff != "01-12":
+    if not dm.df_kpi.empty and 'Fecha' in dm.df_kpi.columns:
+        dm.df_kpi = dm.df_kpi[dm.df_kpi['Fecha'].astype(str) <= cutoff]
+    if not dm.df_calculos.empty and 'Fecha' in dm.df_calculos.columns:
+        dm.df_calculos = dm.df_calculos[dm.df_calculos['Fecha'].astype(str) <= cutoff]
+    if hasattr(dm, 'df_indicadores_mes') and not dm.df_indicadores_mes.empty:
+        month_int = int(cutoff.split("-")[1])
+        dm.df_indicadores_mes = dm.df_indicadores_mes.iloc[:max(0, month_int - 1)]
 
 # Navegación
 st.sidebar.markdown("<br><h2 style='text-align: center; margin-top: 10px;'>NAVEGACIÓN</h2><hr>", unsafe_allow_html=True)
@@ -148,7 +177,7 @@ if seleccion == "RESUMEN EJECUTIVO":
         try:
             fechas, vp, cr, vg = dm.get_scurve_data()
             
-            if "idx_sel" not in st.session_state:
+            if "idx_sel" not in st.session_state or st.session_state.idx_sel >= len(fechas):
                 st.session_state.idx_sel = len(fechas) - 1
             
             fecha_sel = fechas[st.session_state.idx_sel]
@@ -315,13 +344,22 @@ elif seleccion == "CRONOGRAMA (GANTT)":
     if gantt_data:
         df_gantt = pd.DataFrame(gantt_data)
         
-        def fix_date(d):
+        def fix_date_start(d):
             if len(d) == 5: # MM-DD
-                return f"2001-{d}"
+                parts = d.split('-')
+                if len(parts) == 2:
+                    return f"2001-{parts[1]}-01"
             return d
             
-        df_gantt['Start'] = df_gantt['Start'].apply(fix_date)
-        df_gantt['Finish'] = df_gantt['Finish'].apply(fix_date)
+        def fix_date_finish(d):
+            if len(d) == 5:
+                parts = d.split('-')
+                if len(parts) == 2:
+                    return f"2001-{parts[1]}-28"
+            return d
+            
+        df_gantt['Start'] = df_gantt['Start'].apply(fix_date_start)
+        df_gantt['Finish'] = df_gantt['Finish'].apply(fix_date_finish)
         
         import plotly.express as px
         fig_gantt = px.timeline(
@@ -336,6 +374,10 @@ elif seleccion == "CRONOGRAMA (GANTT)":
         )
         
         fig_gantt.update_yaxes(autorange="reversed") # Tareas de arriba hacia abajo
+        
+        cutoff_str = st.session_state.get("current_cutoff", "01-12")
+        x_range = ["2001-01-01", f"2001-{cutoff_str[3:]}-28"] if cutoff_str != "01-12" else None
+        
         fig_gantt.update_layout(
             paper_bgcolor='rgba(0,0,0,0)', 
             plot_bgcolor='rgba(0,0,0,0)',
@@ -345,7 +387,8 @@ elif seleccion == "CRONOGRAMA (GANTT)":
                 showgrid=True,
                 gridcolor='#e0e0e0',
                 tickformat="%b", # Mostrar nombre del mes
-                dtick="M1" # Intervalo de un mes
+                dtick="M1", # Intervalo de un mes
+                range=x_range
             )
         )
         
@@ -362,9 +405,9 @@ elif seleccion == "FLUJO DE CAJA":
     try:
         df_calc = dm.df_calculos
         if not df_calc.empty:
-            # Calcular flujo de caja periódico (diferencias)
-            df_calc['Flujo_CR'] = pd.to_numeric(df_calc['CR'], errors='coerce').fillna(0).diff().fillna(pd.to_numeric(df_calc['CR'], errors='coerce').fillna(0).iloc[0])
-            df_calc['Flujo_VP'] = pd.to_numeric(df_calc['Cco'], errors='coerce').fillna(0).diff().fillna(pd.to_numeric(df_calc['Cco'], errors='coerce').fillna(0).iloc[0])
+            # Calcular flujo de caja periódico (diferencias) y evitar saltos negativos por los cortes abruptos de fecha
+            df_calc['Flujo_CR'] = pd.to_numeric(df_calc['CR'], errors='coerce').fillna(0).diff().fillna(pd.to_numeric(df_calc['CR'], errors='coerce').fillna(0).iloc[0]).clip(lower=0)
+            df_calc['Flujo_VP'] = pd.to_numeric(df_calc['Cco'], errors='coerce').fillna(0).diff().fillna(pd.to_numeric(df_calc['Cco'], errors='coerce').fillna(0).iloc[0]).clip(lower=0)
             
             # Acumulados
             df_calc['CR_Acum'] = pd.to_numeric(df_calc['CR'], errors='coerce').fillna(0)

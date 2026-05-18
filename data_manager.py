@@ -24,15 +24,28 @@ class DataManager:
         self.load_json_data()
 
     def get_project_id(self):
-        return self.project_name.lower().replace(" (original)", "").replace(" ", "_")
+        mapping = {
+            "Caso Base (Original)": "caso_base",
+            "Proyecto 2 - Situación al 1 de Febrero": "proyecto_2",
+            "Proyecto 3 - Situación al 1 de Marzo": "proyecto_3",
+            "Proyecto 4 - Situación al 1 de Abril": "proyecto_4",
+            "Proyecto 5 - Situación al 1 de Mayo": "proyecto_5",
+        }
+        return mapping.get(self.project_name, "caso_base")
 
     def set_project(self, project_name):
         self.project_name = project_name
         
         # Check if a custom project-specific Excel file exists
-        project_id = self.get_project_id()
-        project_excel_filename = f"Entrega3_{project_id}.xlsx"
-        project_excel_path = os.path.join(base_dir, project_excel_filename)
+        mapping = {
+            "Caso Base (Original)": "Entrega3.xlsx",
+            "Proyecto 2 - Situación al 1 de Febrero": "Entrega3_proyecto_acelerado.xlsx",
+            "Proyecto 3 - Situación al 1 de Marzo": "Entrega3_rendimiento_excepcional.xlsx",
+            "Proyecto 4 - Situación al 1 de Abril": "Entrega3_retraso_en_procura.xlsx",
+            "Proyecto 5 - Situación al 1 de Mayo": "Entrega3_sobrecosto_por_cambios.xlsx",
+        }
+        excel_filename = mapping.get(project_name, "Entrega3.xlsx")
+        project_excel_path = os.path.join(base_dir, excel_filename)
         
         if os.path.exists(project_excel_path):
             # 1. Load real data from custom project Excel database
@@ -43,17 +56,17 @@ class DataManager:
             self.load_excel_data(EXCEL_FILE)
             self.using_simulation = True
             
-            # Apply mathematical transformations to generate realistic project scenarios
+            # Apply mathematical transformations to generate realistic project scenarios (fallback)
             if project_name == "Caso Base (Original)":
                 pass
-            elif project_name == "Proyecto Acelerado":
+            elif project_name == "Proyecto 2 - Situación al 1 de Febrero":
                 self._apply_scaling(factor_vg=1.15, factor_cr=1.10, factor_vp=1.0)
-            elif project_name == "Retraso en Procura":
-                self._apply_delay_scaling()
-            elif project_name == "Sobrecosto por Cambios":
-                self._apply_scaling(factor_vg=0.90, factor_cr=1.35, factor_vp=1.15)
-            elif project_name == "Rendimiento Excepcional":
+            elif project_name == "Proyecto 3 - Situación al 1 de Marzo":
                 self._apply_scaling(factor_vg=1.08, factor_cr=0.85, factor_vp=1.0)
+            elif project_name == "Proyecto 4 - Situación al 1 de Abril":
+                self._apply_delay_scaling()
+            elif project_name == "Proyecto 5 - Situación al 1 de Mayo":
+                self._apply_scaling(factor_vg=0.90, factor_cr=1.35, factor_vp=1.15)
             
         self.load_json_data() # Load project-specific JSON logs
 
@@ -314,31 +327,36 @@ class DataManager:
         results = []
         activities = [a for a in self.df_indicadores_totales['Actividad'].unique() if a != 'TOTAL']
         
+        # Hardcoded baseline schedule (Planned Start, Planned Finish)
+        baseline = {
+            "Ingeniería conceptual": ("01-01", "01-02"),
+            "Equipos principales": ("01-03", "01-08"),
+            "Ingeniería básica": ("01-02", "01-04"),
+            "Equipos secundarios": ("01-04", "01-09"),
+            "Ingeniería de detalle": ("01-04", "01-06"),
+            "Equipos auxiliares": ("01-06", "01-10"),
+            "Construcción": ("01-06", "01-10"),
+            "Montaje": ("01-08", "01-11"),
+            "Pruebas": ("01-10", "01-12"),
+            "Puesta en Marcha": ("01-11", "01-12")
+        }
+        
         for act in activities:
             sub = self.df_indicadores_totales[self.df_indicadores_totales['Actividad'] == act].copy()
-            # Asegurar que Fecha sea string para comparaciones si es necesario, o manejarla como objeto
             sub['Fecha_str'] = sub['Fecha'].astype(str)
             sub = sub.sort_values('Fecha_str')
             
-            # Start: First month with AR > 0
-            start_row = sub[sub['AR'] > 0]
-            if not start_row.empty:
-                start = start_row['Fecha_str'].iloc[0]
+            if act in baseline:
+                start, end = baseline[act]
             else:
                 start = sub['Fecha_str'].iloc[0]
-                
-            # End: First month with AR >= 100
-            end_row = sub[sub['AR'] >= 100]
-            if not end_row.empty:
-                end = end_row['Fecha_str'].iloc[0]
-            else:
                 end = sub['Fecha_str'].iloc[-1]
             
             results.append({
                 'Task': act,
                 'Start': start,
                 'Finish': end,
-                'Completion': sub['AR'].iloc[-1]
+                'Completion': sub['AR'].max()
             })
             
         return results
