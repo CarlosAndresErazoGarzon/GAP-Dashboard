@@ -16,9 +16,10 @@ EXCEL_FILE = os.path.join(base_dir, "Entrega3.xlsx")
 JSON_FILE = os.path.join(base_dir, "registros.json")
 
 class DataManager:
-    VERSION = "1.2"
+    VERSION = "1.3"
     def __init__(self):
         self.project_name = "Caso Base (Original)"
+        self.using_simulation = False
         self.load_excel_data()
         self.load_json_data()
 
@@ -27,19 +28,32 @@ class DataManager:
 
     def set_project(self, project_name):
         self.project_name = project_name
-        self.load_excel_data() # Re-load fresh base case data
         
-        # Apply mathematical transformations to generate realistic project scenarios
-        if project_name == "Caso Base (Original)":
-            pass
-        elif project_name == "Proyecto Acelerado":
-            self._apply_scaling(factor_vg=1.15, factor_cr=1.10, factor_vp=1.0)
-        elif project_name == "Retraso en Procura":
-            self._apply_delay_scaling()
-        elif project_name == "Sobrecosto por Cambios":
-            self._apply_scaling(factor_vg=0.90, factor_cr=1.35, factor_vp=1.15)
-        elif project_name == "Rendimiento Excepcional":
-            self._apply_scaling(factor_vg=1.08, factor_cr=0.85, factor_vp=1.0)
+        # Check if a custom project-specific Excel file exists
+        project_id = self.get_project_id()
+        project_excel_filename = f"Entrega3_{project_id}.xlsx"
+        project_excel_path = os.path.join(base_dir, project_excel_filename)
+        
+        if os.path.exists(project_excel_path):
+            # 1. Load real data from custom project Excel database
+            self.load_excel_data(project_excel_path)
+            self.using_simulation = False
+        else:
+            # 2. Fall back to base Excel database and apply high-fidelity programmatic simulation
+            self.load_excel_data(EXCEL_FILE)
+            self.using_simulation = True
+            
+            # Apply mathematical transformations to generate realistic project scenarios
+            if project_name == "Caso Base (Original)":
+                pass
+            elif project_name == "Proyecto Acelerado":
+                self._apply_scaling(factor_vg=1.15, factor_cr=1.10, factor_vp=1.0)
+            elif project_name == "Retraso en Procura":
+                self._apply_delay_scaling()
+            elif project_name == "Sobrecosto por Cambios":
+                self._apply_scaling(factor_vg=0.90, factor_cr=1.35, factor_vp=1.15)
+            elif project_name == "Rendimiento Excepcional":
+                self._apply_scaling(factor_vg=1.08, factor_cr=0.85, factor_vp=1.0)
             
         self.load_json_data() # Load project-specific JSON logs
 
@@ -112,16 +126,18 @@ class DataManager:
             if "CR" in self.df_paquetes.columns:
                 self.df_paquetes["CR"] = pd.to_numeric(self.df_paquetes["CR"], errors='coerce').fillna(0) * 1.25
 
-    def load_excel_data(self):
+    def load_excel_data(self, excel_path=None):
+        if excel_path is None:
+            excel_path = EXCEL_FILE
         try:
-            xl = pd.ExcelFile(EXCEL_FILE)
+            xl = pd.ExcelFile(excel_path)
             self.df_indicadores_totales = xl.parse("Indicadores_totales")
             self.df_paquetes = xl.parse("paquetes_trabajo")
             self.df_kpi = xl.parse("KPI")
             self.df_indicadores_mes = xl.parse("Indicadores_pormes")
             self.df_calculos = xl.parse("calculos_totales")
         except Exception as e:
-            print(f"Error loading Excel: {e}")
+            print(f"Error loading Excel ({excel_path}): {e}")
             self.df_indicadores_totales = pd.DataFrame()
             self.df_paquetes = pd.DataFrame()
             self.df_kpi = pd.DataFrame()
